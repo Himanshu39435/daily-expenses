@@ -4,6 +4,9 @@ const schema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true },
+    passwordResetTokenHash: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
+    authVersion: { type: Number, default: 0 },
     role: { type: String, enum: ['admin', 'employee'], default: 'employee' },
     isPrimaryAdmin: { type: Boolean, default: false },
     organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -15,4 +18,5 @@ const schema = new mongoose.Schema(
   { timestamps: true }
 );
 schema.index({ isPrimaryAdmin: 1 }, { unique: true, partialFilterExpression: { isPrimaryAdmin: true } });
+schema.index({ passwordResetTokenHash: 1 }, { sparse: true });
 module.exports = mongoose.model('User', schema);

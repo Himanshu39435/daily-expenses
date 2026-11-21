@@ -8,14 +8,17 @@ const EmployeeInvite = require('../models/EmployeeInvite');
 const auth = require('../middleware/auth');
 const wrap = require('../middleware/wrap');
 const { roleFor } = require('../utils/roles');
+const { createPasswordResetToken, hashPasswordResetToken } = require('../utils/passwordReset');
+const { createPasswordResetMailer } = require('../utils/passwordResetMailer');
 
 const pub = (u) => ({
   id: u._id, name: u.name, email: u.email, companyName: u.companyName,
   role: roleFor(u),
   openingBalance: u.openingBalance, openingDate: new Date(u.openingDate).toISOString().slice(0, 10),
 });
-const sign = (u) => jwt.sign({ id: u._id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '7d' });
+const sign = (u) => jwt.sign({ id: u._id, v: u.authVersion || 0 }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '7d' });
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many attempts, try again in a few minutes' } });
+const resetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many password reset attempts. Try again later.' } });
 const bad = (res, message) => res.status(400).json({ message });
 
 router.post('/register', limiter, wrap(async (req, res) => {
@@ -74,6 +77,52 @@ router.post('/login', limiter, wrap(async (req, res) => {
   res.json({ token: sign(user), user: pub(user) });
 }));
 
+router.post('/forgot-password', resetLimiter, wrap(async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!/^\S+@\S+\.\S+$/.test(email)) return bad(res, 'Enter a valid email address');
+
+  const mailer = createPasswordResetMailer();
+  const user = await User.findOne({ email });
+  if (user) {
+    const reset = createPasswordResetToken();
+    user.passwordResetTokenHash = reset.tokenHash;
+    user.passwordResetExpires = reset.expiresAt;
+    await user.save();
+
+    try {
+      await mailer.send(user.email, reset.token);
+    } catch (error) {
+      await User.updateOne(
+        { _id: user._id, passwordResetTokenHash: reset.tokenHash },
+        { $unset: { passwordResetTokenHash: 1, passwordResetExpires: 1 } }
+      );
+      console.error('Password reset email delivery failed:', error);
+      return res.status(503).json({ message: 'Could not send the reset email. Check the email server settings and try again.' });
+    }
+  }
+  res.json({ message: 'If an account exists for that email, a password reset link has been sent.' });
+}));
+
+router.post('/reset-password', resetLimiter, wrap(async (req, res) => {
+  const { token, password } = req.body || {};
+  if (typeof token !== 'string' || !/^[a-f\d]{64}$/i.test(token)) {
+    return res.status(410).json({ message: 'This password reset link is invalid or has expired.' });
+  }
+  if (typeof password !== 'string' || password.length < 8) return bad(res, 'Password must be at least 8 characters');
+
+  const result = await User.findOneAndUpdate(
+    { passwordResetTokenHash: hashPasswordResetToken(token), passwordResetExpires: { $gt: new Date() } },
+    {
+      $set: { password: await bcrypt.hash(password, 11) },
+      $inc: { authVersion: 1 },
+      $unset: { passwordResetTokenHash: 1, passwordResetExpires: 1 },
+    },
+    { new: true }
+  );
+  if (!result) return res.status(410).json({ message: 'This password reset link is invalid or has expired.' });
+  res.json({ message: 'Password reset successfully. You can now sign in.' });
+}));
+
 router.get('/me', auth, (req, res) => res.json({ user: pub(req.user) }));
 
 router.put('/settings', auth, wrap(async (req, res) => {
@@ -103,6 +152,8 @@ router.put('/password', auth, wrap(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (!(await bcrypt.compare(currentPassword || '', user.password))) return bad(res, 'Current password is incorrect');
   user.password = await bcrypt.hash(newPassword, 11);
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetExpires = undefined;
   await user.save();
   res.json({ ok: true });
 }));

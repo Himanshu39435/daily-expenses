@@ -2,6 +2,7 @@
   "name": "company-daily-expense-manager",
   "version": "1.0.0",
   "private": true,
+  "engines": { "node": ">=20.0.0" },
   "scripts": {
     "setup": "npm install && npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n api,web -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",

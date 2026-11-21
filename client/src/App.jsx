@@ -14,6 +14,8 @@ import SettingsPage from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 import Employees from './pages/Employees';
 import InviteAccept from './pages/InviteAccept';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function Protected() {
   const { user, ready } = useAuth();
@@ -42,6 +44,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={ready && user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/invite/:token" element={<InviteAccept />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:token" element={<ResetPassword />} />
       <Route element={<Protected />}>
         <Route path="/" element={user?.role === 'admin' ? <AdminDashboard /> : <Dashboard />} />
         <Route path="/employees" element={<AdminOnly><Employees /></AdminOnly>} />

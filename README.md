@@ -26,7 +26,7 @@ Example: 50,000 received; expenses 500 + 5,000 + 10,000 + 500 all from company -
 Example: 50,000 company money, 55,000 expenses (5,000 paid from pocket) -> balance **0**, personal **5,000**, reimburse **5,000**.
 
 ## Setup
-Requirements: Node.js 18+ and a free MongoDB Atlas cluster.
+Requirements: Node.js 20+ and a free MongoDB Atlas cluster.
 
 1. **MongoDB Atlas**: create a cluster -> Database Access: add a user -> Network Access: allow your IP (or 0.0.0.0/0 for hosting) -> Connect -> Drivers -> copy the connection string.
 2. **Install**
@@ -48,6 +48,9 @@ Requirements: Node.js 18+ and a free MongoDB Atlas cluster.
    Set `ALLOW_REGISTRATION=false` once your accounts exist. Uploaded bills are stored in `server/uploads` (persistent disk needed on hosts like Render/Railway; include them in backups via Settings).
 
 If the client is hosted separately, set `VITE_API_URL` in `client/.env` and `CLIENT_ORIGIN` in `server/.env`.
+
+### Password reset email
+The login page includes a password reset link. Configure the backend email settings in Render (or `server/.env` locally): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, and `CLIENT_URL`. Use the SMTP provider's TLS port (commonly 465 or 587), and set `CLIENT_URL` to the frontend origin, such as `https://your-app.vercel.app`. Keep SMTP credentials private. Reset links expire after 15 minutes, can only be used once, and invalidate existing sessions.
 
 ## Excel export
 `GET /api/export/excel?from=YYYY-MM-DD&to=YYYY-MM-DD` (both optional), from the Excel Download page, Transactions or any report.

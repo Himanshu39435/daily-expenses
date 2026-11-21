@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { IndianRupee } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { ErrorBox, Spinner } from '../components/UI';
@@ -41,6 +42,7 @@ export default function Login() {
             <div><label className="label" htmlFor="e">Email</label><input id="e" type="email" className="input" required value={f.email} onChange={set('email')} autoComplete="email" /></div>
             <div><label className="label" htmlFor="p">Password</label><input id="p" type="password" className="input" required minLength={mode === 'register' ? 8 : undefined} value={f.password} onChange={set('password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
               {mode === 'register' && <p className="mt-1 text-xs text-slate-500">At least 8 characters.</p>}</div>
+            {mode === 'login' && <p className="-mt-2 text-right text-sm"><Link to="/forgot-password" className="font-semibold text-blue-700 hover:underline">Forgot password?</Link></p>}
           </div>
           <button className="btn-primary mt-6 w-full" disabled={busy}>{busy && <Spinner />}{mode === 'login' ? 'Sign in' : 'Set up administrator'}</button>
           <p className="mt-5 text-center text-sm text-slate-500">
