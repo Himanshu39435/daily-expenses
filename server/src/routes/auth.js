@@ -10,6 +10,7 @@ const wrap = require('../middleware/wrap');
 const { roleFor } = require('../utils/roles');
 const { createPasswordResetToken, hashPasswordResetToken } = require('../utils/passwordReset');
 const { createPasswordResetMailer } = require('../utils/passwordResetMailer');
+const { isEmployeeJoinCodeConfigured, matchesEmployeeJoinCode } = require('../utils/employeeJoinCode');
 
 const pub = (u) => ({
   id: u._id, name: u.name, email: u.email, companyName: u.companyName,
@@ -19,6 +20,7 @@ const pub = (u) => ({
 const sign = (u) => jwt.sign({ id: u._id, v: u.authVersion || 0 }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '7d' });
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many attempts, try again in a few minutes' } });
 const resetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many password reset attempts. Try again later.' } });
+const employeeJoinLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many join attempts. Try again later.' } });
 const bad = (res, message) => res.status(400).json({ message });
 
 router.post('/register', limiter, wrap(async (req, res) => {
@@ -43,6 +45,50 @@ router.post('/register', limiter, wrap(async (req, res) => {
     name: name.trim(), email, companyName: typeof companyName === 'string' ? companyName.trim() || 'My Company' : 'My Company',
     password: await bcrypt.hash(password, 11), role: 'admin', isPrimaryAdmin: true,
   });
+  res.status(201).json({ token: sign(user), user: pub(user) });
+}));
+
+router.post('/join-company', employeeJoinLimiter, wrap(async (req, res) => {
+  const expectedCode = process.env.EMPLOYEE_JOIN_CODE;
+  if (!isEmployeeJoinCodeConfigured(expectedCode)) {
+    return res.status(503).json({ message: 'Employee signup is not configured. Set EMPLOYEE_JOIN_CODE in the server environment.' });
+  }
+  const { name, email: rawEmail, password, joinCode } = req.body || {};
+  if (!matchesEmployeeJoinCode(expectedCode, joinCode)) return res.status(403).json({ message: 'Invalid company join code' });
+  if (typeof name !== 'string' || !name.trim()) return bad(res, 'Name is required');
+  const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+  if (!/^\S+@\S+\.\S+$/.test(email)) return bad(res, 'Enter a valid email address');
+  if (typeof password !== 'string' || password.length < 8) return bad(res, 'Password must be at least 8 characters');
+
+  const admin = await User.findOne({ role: 'admin', isPrimaryAdmin: true });
+  if (!admin) return res.status(503).json({ message: 'The company administrator is not configured' });
+
+  let user = await User.findOne({ email });
+  if (user) {
+    if (roleFor(user) === 'admin') return res.status(409).json({ message: 'This email belongs to an administrator' });
+    if (user.organizationId) {
+      const message = String(user.organizationId) === String(admin._id)
+        ? 'This account already belongs to the company. Sign in instead.'
+        : 'This account already belongs to another company.';
+      return res.status(409).json({ message });
+    }
+    if (!(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Enter the current password for this existing account' });
+    }
+    user.set({ name: name.trim(), role: 'employee', isPrimaryAdmin: false, organizationId: admin._id, companyName: admin.companyName });
+    await user.save();
+  } else {
+    try {
+      user = await User.create({
+        name: name.trim(), email, password: await bcrypt.hash(password, 11),
+        role: 'employee', isPrimaryAdmin: false, organizationId: admin._id, companyName: admin.companyName,
+      });
+    } catch (error) {
+      if (error.code === 11000) return res.status(409).json({ message: 'An account with this email already exists' });
+      throw error;
+    }
+  }
+
   res.status(201).json({ token: sign(user), user: pub(user) });
 }));
 

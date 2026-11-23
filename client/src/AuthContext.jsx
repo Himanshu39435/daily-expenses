@@ -18,8 +18,9 @@ export function AuthProvider({ children }) {
   const enter = (d) => { localStorage.setItem('token', d.token); setUser(d.user); };
   const login = useCallback(async (email, password) => enter(await api.post('/auth/login', { email, password })), []);
   const register = useCallback(async (body) => enter(await api.post('/auth/register', body)), []);
+  const registerEmployee = useCallback(async (body) => enter(await api.post('/auth/join-company', body)), []);
   const acceptInvite = useCallback(async (body) => enter(await api.post('/auth/accept-invite', body)), []);
   const logout = useCallback(() => { localStorage.removeItem('token'); setUser(null); }, []);
 
-  return <Ctx.Provider value={{ user, setUser, ready, login, register, acceptInvite, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, setUser, ready, login, register, registerEmployee, acceptInvite, logout }}>{children}</Ctx.Provider>;
 }

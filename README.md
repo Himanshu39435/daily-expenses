@@ -12,7 +12,7 @@ Full-stack expense tracker for money a company gives you and the expenses you pa
 - Duplicate-entry protection, bill viewer, backup and restore (JSON, includes bills), print, JWT auth, per-user data isolation.
 - Excel export (complete history or any date range) with live formulas, see below.
 - Mobile: bottom navigation. Desktop: sidebar.
-- Role-based workspaces: a one-time, setup-key-protected account becomes the MongoDB-designated administrator; employee accounts are created through single-use invitations. Administrators see company-wide totals and employee spending, while employees only see their own transactions and cannot change company settings.
+- Role-based workspaces: a one-time, setup-key-protected account becomes the MongoDB-designated administrator; employees can join with a shared company code or a single-use invitation. Administrators see company-wide totals and employee spending, while employees only see their own transactions and cannot change company settings.
 
 ## Formulas
 ```
@@ -40,12 +40,12 @@ Requirements: Node.js 20+ and a free MongoDB Atlas cluster.
    npm run dev
    ```
    Open http://localhost:5173, choose "Set up administrator", enter the `ADMIN_SETUP_KEY`, then set the opening balance in Settings.
-5. **Account roles:** the first account is created once using the private `ADMIN_SETUP_KEY`; its `role` and `isPrimaryAdmin` fields are stored in MongoDB, and its password is stored as a hash. After setup, public administrator setup is closed. Only the MongoDB record marked `role: "admin"` and `isPrimaryAdmin: true` can use admin access. From **Employees**, the administrator can create a single-use invitation link (valid for 7 days) and share it with an employee. Invitation links can be revoked while pending. Employees only see their own records; administrators see aggregate company totals and each employee's expenses. An existing account can join with its current password; its transaction history then becomes visible to that company's administrators.
+5. **Account roles:** the first account is created once using the private `ADMIN_SETUP_KEY`; its `role` and `isPrimaryAdmin` fields are stored in MongoDB, and its password is stored as a hash. After setup, public administrator setup is closed. Only the MongoDB record marked `role: "admin"` and `isPrimaryAdmin: true` can use admin access. To enable employee self-signup, set a private `EMPLOYEE_JOIN_CODE` of at least 16 characters in the server environment. Employees choose **Create employee account** on the sign-in page and enter that code with their email, name, and password. Anyone with the code can join the company, so share it privately and rotate it if exposed. An existing unlinked account can join with its current password, preserving its transactions. Alternatively, administrators can create single-use invitation links (valid for 7 days) from **Employees** and revoke pending invitations. Employees only see their own records; administrators see aggregate company totals and each employee's expenses.
 6. **Run in production** (one server serves API + website):
    ```bash
    npm run build && npm start      # open http://localhost:5000
    ```
-   Set `ALLOW_REGISTRATION=false` once your accounts exist. Uploaded bills are stored in `server/uploads` (persistent disk needed on hosts like Render/Railway; include them in backups via Settings).
+   Set `ALLOW_REGISTRATION=false` to disable first-time administrator setup after the admin account exists. Employee self-signup remains available only when `EMPLOYEE_JOIN_CODE` is set. Uploaded bills are stored in `server/uploads` (persistent disk needed on hosts like Render/Railway; include them in backups via Settings).
 
 If the client is hosted separately, set `VITE_API_URL` in `client/.env` and `CLIENT_ORIGIN` in `server/.env`.
 
@@ -73,7 +73,7 @@ npm test
 Covers the two spec examples, split payments, reimbursements, running ledger, validation, empty data, and Excel structure/formula references (including date-range export). The generated workbook was also recalculated in LibreOffice and edits to input cells were confirmed to flow through all four sheets.
 
 ## API (all except auth need `Authorization: Bearer <token>`)
-`POST /api/auth/register|login|accept-invite` - `GET /api/auth/me` - `PUT /api/auth/settings|password`
+`POST /api/auth/register|join-company|login|accept-invite` - `GET /api/auth/me` - `PUT /api/auth/settings|password`
 `GET /api/admin/dashboard|employees` - `POST /api/admin/invites` - `DELETE /api/admin/invites/:id` (admin only)
 `GET/POST /api/transactions` - `GET/PUT/DELETE /api/transactions/:id` - `GET /api/transactions/:id/bill`
 `GET /api/reports/summary|dashboard|report` - `GET /api/export/excel` - `GET /api/backup` - `POST /api/backup/restore`
