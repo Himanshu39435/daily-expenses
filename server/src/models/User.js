@@ -9,6 +9,8 @@ const schema = new mongoose.Schema(
     authVersion: { type: Number, default: 0 },
     role: { type: String, enum: ['admin', 'employee'], default: 'employee' },
     isPrimaryAdmin: { type: Boolean, default: false },
+    isCompanyAdmin: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
     organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     companyName: { type: String, default: 'My Company', trim: true },
     openingBalance: { type: Number, default: 0 },

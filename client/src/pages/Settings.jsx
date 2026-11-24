@@ -16,7 +16,7 @@ export default function Settings() {
 
   async function saveProfile(e) {
     e.preventDefault(); setErr(''); setBusy('profile');
-    try { const d = await api.put('/auth/settings', user.role === 'admin' ? p : { name: p.name }); setUser(d.user); toast('Settings saved - all balances recalculated'); } catch (x) { setErr(x.message); } finally { setBusy(''); }
+    try { const d = await api.put('/auth/settings', user.isPrimaryAdmin ? p : { name: p.name }); setUser(d.user); toast('Settings saved - all balances recalculated'); } catch (x) { setErr(x.message); } finally { setBusy(''); }
   }
   async function savePw(e) {
     e.preventDefault(); setErr(''); setBusy('pw');
@@ -46,15 +46,17 @@ export default function Settings() {
       <ErrorBox>{err}</ErrorBox>
       <div className="grid gap-4 lg:grid-cols-2">
         <form onSubmit={saveProfile} className="card p-5">
-          <h2 className="font-semibold text-slate-900">{user.role === 'admin' ? 'Company and opening balance' : 'Profile'}</h2>
+          <h2 className="font-semibold text-slate-900">{user.isPrimaryAdmin ? 'Company and opening balance' : 'Profile'}</h2>
           <div className="mt-4 space-y-4">
             <div><label className="label" htmlFor="n">Your name</label><input id="n" className="input" required value={p.name} onChange={set('name')} /></div>
-            <div><label className="label" htmlFor="c">Company name</label><input id="c" className="input" value={p.companyName} onChange={set('companyName')} disabled={user.role !== 'admin'} /></div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div><label className="label" htmlFor="ob">Opening balance (₹)</label><input id="ob" type="number" min="0" step="0.01" className="input" value={p.openingBalance} onChange={set('openingBalance')} disabled={user.role !== 'admin'} /></div>
-              <div><label className="label" htmlFor="od">Opening date</label><input id="od" type="date" className="input" value={p.openingDate} onChange={set('openingDate')} disabled={user.role !== 'admin'} /></div>
-            </div>
-            <p className="text-xs text-slate-500">{user.role === 'admin' ? 'The opening balance is the money you already held from the company before you started recording. Use Add Money for anything received later.' : 'Company details and opening balance are managed by your administrator.'}</p>
+            {user.isPrimaryAdmin ? <>
+              <div><label className="label" htmlFor="c">Company name</label><input id="c" className="input" value={p.companyName} onChange={set('companyName')} /></div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label className="label" htmlFor="ob">Opening balance (₹)</label><input id="ob" type="number" min="0" step="0.01" className="input" value={p.openingBalance} onChange={set('openingBalance')} /></div>
+                <div><label className="label" htmlFor="od">Opening date</label><input id="od" type="date" className="input" value={p.openingDate} onChange={set('openingDate')} /></div>
+              </div>
+              <p className="text-xs text-slate-500">The opening balance is the money you already held from the company before you started recording. Use Add Money for anything received later.</p>
+            </> : <p className="text-xs text-slate-500">{user.role === 'admin' ? 'Company settings are managed by the owner administrator.' : 'Company details and opening balance are managed by your administrator.'}</p>}
           </div>
           <button className="btn-primary mt-5" disabled={busy === 'profile'}>{busy === 'profile' && <Spinner />}Save settings</button>
         </form>

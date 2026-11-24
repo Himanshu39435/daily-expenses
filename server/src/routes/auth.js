@@ -7,7 +7,7 @@ const User = require('../models/User');
 const EmployeeInvite = require('../models/EmployeeInvite');
 const auth = require('../middleware/auth');
 const wrap = require('../middleware/wrap');
-const { roleFor } = require('../utils/roles');
+const { roleFor, companyIdFor } = require('../utils/roles');
 const { createPasswordResetToken, hashPasswordResetToken } = require('../utils/passwordReset');
 const { createPasswordResetMailer } = require('../utils/passwordResetMailer');
 const { isEmployeeJoinCodeConfigured, matchesEmployeeJoinCode } = require('../utils/employeeJoinCode');
@@ -15,6 +15,7 @@ const { isEmployeeJoinCodeConfigured, matchesEmployeeJoinCode } = require('../ut
 const pub = (u) => ({
   id: u._id, name: u.name, email: u.email, companyName: u.companyName,
   role: roleFor(u),
+  isPrimaryAdmin: u.isPrimaryAdmin === true,
   openingBalance: u.openingBalance, openingDate: new Date(u.openingDate).toISOString().slice(0, 10),
 });
 const sign = (u) => jwt.sign({ id: u._id, v: u.authVersion || 0 }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '7d' });
@@ -66,6 +67,7 @@ router.post('/join-company', employeeJoinLimiter, wrap(async (req, res) => {
   let user = await User.findOne({ email });
   if (user) {
     if (roleFor(user) === 'admin') return res.status(409).json({ message: 'This email belongs to an administrator' });
+    if (user.isActive === false) return res.status(403).json({ message: 'This account has been deactivated. Contact your administrator.' });
     if (user.organizationId) {
       const message = String(user.organizationId) === String(admin._id)
         ? 'This account already belongs to the company. Sign in instead.'
@@ -75,13 +77,14 @@ router.post('/join-company', employeeJoinLimiter, wrap(async (req, res) => {
     if (!(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ message: 'Enter the current password for this existing account' });
     }
-    user.set({ name: name.trim(), role: 'employee', isPrimaryAdmin: false, organizationId: admin._id, companyName: admin.companyName });
+    user.set({ name: name.trim(), role: 'employee', isPrimaryAdmin: false, isCompanyAdmin: false, isActive: true, organizationId: admin._id, companyName: admin.companyName });
     await user.save();
   } else {
     try {
       user = await User.create({
         name: name.trim(), email, password: await bcrypt.hash(password, 11),
-        role: 'employee', isPrimaryAdmin: false, organizationId: admin._id, companyName: admin.companyName,
+        role: 'employee', isPrimaryAdmin: false, isCompanyAdmin: false, isActive: true,
+        organizationId: admin._id, companyName: admin.companyName,
       });
     } catch (error) {
       if (error.code === 11000) return res.status(409).json({ message: 'An account with this email already exists' });
@@ -99,17 +102,28 @@ router.post('/accept-invite', limiter, wrap(async (req, res) => {
   if (typeof password !== 'string' || password.length < 8) return bad(res, 'Password must be at least 8 characters');
   const invite = await EmployeeInvite.findOne({ tokenHash: crypto.createHash('sha256').update(token).digest('hex'), expiresAt: { $gt: new Date() } });
   if (!invite) return res.status(410).json({ message: 'This invitation is invalid or has expired' });
-  const admin = await User.findById(invite.invitedBy);
-  if (!admin) return res.status(410).json({ message: 'This invitation is no longer available' });
+  const inviter = await User.findById(invite.invitedBy);
+  if (!inviter || inviter.isActive === false || roleFor(inviter) !== 'admin') {
+    return res.status(410).json({ message: 'This invitation is no longer available' });
+  }
+  const companyId = companyIdFor(inviter);
+  const owner = inviter.isPrimaryAdmin === true ? inviter : await User.findById(companyId);
+  if (!owner || owner.isPrimaryAdmin !== true) return res.status(410).json({ message: 'This invitation is no longer available' });
   let user = await User.findOne({ email: invite.email });
   if (user) {
+    if (user.isActive === false) return res.status(403).json({ message: 'This account has been deactivated. Contact your administrator.' });
+    if (roleFor(user) === 'admin') return res.status(409).json({ message: 'This email belongs to an administrator' });
+    if (user.organizationId && String(user.organizationId) !== String(companyId)) {
+      return res.status(409).json({ message: 'This account already belongs to another company' });
+    }
     if (!(await bcrypt.compare(password, user.password))) return res.status(401).json({ message: 'Incorrect password for this existing account' });
-    user.set({ name: name.trim(), role: 'employee', isPrimaryAdmin: false, organizationId: admin._id, companyName: admin.companyName });
+    user.set({ name: name.trim(), role: 'employee', isPrimaryAdmin: false, isCompanyAdmin: false, isActive: true, organizationId: companyId, companyName: owner.companyName });
     await user.save();
   } else {
     user = await User.create({
       name: name.trim(), email: invite.email, password: await bcrypt.hash(password, 11),
-      role: 'employee', organizationId: admin._id, companyName: admin.companyName,
+      role: 'employee', isPrimaryAdmin: false, isCompanyAdmin: false, isActive: true,
+      organizationId: companyId, companyName: owner.companyName,
     });
   }
   await invite.deleteOne();
@@ -120,6 +134,7 @@ router.post('/login', limiter, wrap(async (req, res) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email: String(email || '').toLowerCase() });
   if (!user || !(await bcrypt.compare(password || '', user.password))) return res.status(401).json({ message: 'Incorrect email or password' });
+  if (user.isActive === false) return res.status(403).json({ message: 'This account has been deactivated. Contact your administrator.' });
   res.json({ token: sign(user), user: pub(user) });
 }));
 
@@ -173,8 +188,8 @@ router.get('/me', auth, (req, res) => res.json({ user: pub(req.user) }));
 
 router.put('/settings', auth, wrap(async (req, res) => {
   const { name, companyName, openingBalance, openingDate } = req.body;
-  if (req.user.role === 'employee' && [companyName, openingBalance, openingDate].some((value) => value !== undefined)) {
-    return res.status(403).json({ message: 'Only an administrator can change company settings' });
+  if (req.user.isPrimaryAdmin !== true && [companyName, openingBalance, openingDate].some((value) => value !== undefined)) {
+    return res.status(403).json({ message: 'Only the owner administrator can change company settings' });
   }
   const upd = {};
   if (name !== undefined) { if (!String(name).trim()) return bad(res, 'Name is required'); upd.name = String(name).trim(); }

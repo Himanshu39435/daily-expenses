@@ -74,9 +74,11 @@ router.post('/restore', wrap(async (req, res) => {
 
   const s = d.settings || {};
   const upd = { txnSeq: seq };
-  if (s.companyName) upd.companyName = String(s.companyName).slice(0, 100);
-  if (Number.isFinite(Number(s.openingBalance)) && Number(s.openingBalance) >= 0) upd.openingBalance = Number(s.openingBalance);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s.openingDate || '')) upd.openingDate = new Date(s.openingDate + 'T00:00:00.000Z');
+  if (req.user.isPrimaryAdmin === true) {
+    if (s.companyName) upd.companyName = String(s.companyName).slice(0, 100);
+    if (Number.isFinite(Number(s.openingBalance)) && Number(s.openingBalance) >= 0) upd.openingBalance = Number(s.openingBalance);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s.openingDate || '')) upd.openingDate = new Date(s.openingDate + 'T00:00:00.000Z');
+  }
   await User.findByIdAndUpdate(req.user._id, upd);
   res.json({ ok: true, restored: inserts.length });
 }));

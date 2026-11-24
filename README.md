@@ -12,7 +12,7 @@ Full-stack expense tracker for money a company gives you and the expenses you pa
 - Duplicate-entry protection, bill viewer, backup and restore (JSON, includes bills), print, JWT auth, per-user data isolation.
 - Excel export (complete history or any date range) with live formulas, see below.
 - Mobile: bottom navigation. Desktop: sidebar.
-- Role-based workspaces: a one-time, setup-key-protected account becomes the MongoDB-designated administrator; employees can join with a shared company code or a single-use invitation. Administrators see company-wide totals and employee spending, while employees only see their own transactions and cannot change company settings.
+- Role-based workspaces: a one-time, setup-key-protected account becomes the immutable owner administrator; employees can join with a shared company code or a single-use invitation. Administrators can edit employee names/emails, promote employees to administrator, and deactivate accounts without deleting history. Only the owner can manage other administrators or change company settings.
 
 ## Formulas
 ```
@@ -40,7 +40,7 @@ Requirements: Node.js 20+ and a free MongoDB Atlas cluster.
    npm run dev
    ```
    Open http://localhost:5173, choose "Set up administrator", enter the `ADMIN_SETUP_KEY`, then set the opening balance in Settings.
-5. **Account roles:** the first account is created once using the private `ADMIN_SETUP_KEY`; its `role` and `isPrimaryAdmin` fields are stored in MongoDB, and its password is stored as a hash. After setup, public administrator setup is closed. Only the MongoDB record marked `role: "admin"` and `isPrimaryAdmin: true` can use admin access. To enable employee self-signup, set a private `EMPLOYEE_JOIN_CODE` of at least 16 characters in the server environment. Employees choose **Create employee account** on the sign-in page and enter that code with their email, name, and password. Anyone with the code can join the company, so share it privately and rotate it if exposed. An existing unlinked account can join with its current password, preserving its transactions. Alternatively, administrators can create single-use invitation links (valid for 7 days) from **Employees** and revoke pending invitations. Employees only see their own records; administrators see aggregate company totals and each employee's expenses.
+5. **Account roles:** the first account is created once using the private `ADMIN_SETUP_KEY`; its `role` and `isPrimaryAdmin` fields are stored in MongoDB, and its password is stored as a hash. The primary owner cannot be edited or deactivated through team management. Administrators can edit employee names/emails, promote employees to administrator, and deactivate/reactivate accounts while preserving transaction history. Only the owner can manage other administrator accounts or change company settings. To enable employee self-signup, set a private `EMPLOYEE_JOIN_CODE` of at least 16 characters in the server environment. Employees choose **Create employee account** on the sign-in page and enter that code with their email, name, and password. Anyone with the code can join the company, so share it privately and rotate it if exposed. An existing unlinked account can join with its current password, preserving its transactions. Alternatively, administrators can create single-use invitation links (valid for 7 days) from **Employees** and revoke pending invitations. Employees only see their own records; administrators see aggregate company totals and each employee's expenses.
 6. **Run in production** (one server serves API + website):
    ```bash
    npm run build && npm start      # open http://localhost:5000
@@ -74,7 +74,7 @@ Covers the two spec examples, split payments, reimbursements, running ledger, va
 
 ## API (all except auth need `Authorization: Bearer <token>`)
 `POST /api/auth/register|join-company|login|accept-invite` - `GET /api/auth/me` - `PUT /api/auth/settings|password`
-`GET /api/admin/dashboard|employees` - `POST /api/admin/invites` - `DELETE /api/admin/invites/:id` (admin only)
+`GET /api/admin/dashboard|employees` - `PUT /api/admin/employees/:id` - `POST /api/admin/invites` - `DELETE /api/admin/invites/:id` (admin only)
 `GET/POST /api/transactions` - `GET/PUT/DELETE /api/transactions/:id` - `GET /api/transactions/:id/bill`
 `GET /api/reports/summary|dashboard|report` - `GET /api/export/excel` - `GET /api/backup` - `POST /api/backup/restore`
 
