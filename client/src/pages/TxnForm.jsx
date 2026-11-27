@@ -12,13 +12,14 @@ export default function TxnForm({ kind, initial, targetOwnerId }) {
   const toast = useToast();
   const isExp = kind === 'expense';
   const editing = !!initial;
+  const initialId = initial?._id || '';
   const blank = { date: today(), amount: '', party: isExp ? '' : 'Company', paymentMode: 'Cash', description: '', category: 'Transport', paymentSource: 'company', personalPaid: '', notes: '', reimb: false };
   const initialValues = initial ? {
-    date: initial.date, amount: String(initial.amount), party: initial.party, paymentMode: initial.paymentMode || 'Cash',
-    description: initial.description, category: isExp ? initial.category : 'Transport', paymentSource: initial.paymentSource || 'company',
-    personalPaid: initial.personalExpense ? String(initial.personalExpense) : '', notes: initial.notes || '', reimb: initial.type === 'reimbursement',
+    date: initial?.date || today(), amount: String(initial?.amount || ''), party: initial?.party || '', paymentMode: initial?.paymentMode || 'Cash',
+    description: initial?.description || '', category: isExp ? (initial?.category || 'Transport') : 'Transport', paymentSource: initial?.paymentSource || 'company',
+    personalPaid: initial?.personalExpense ? String(initial.personalExpense) : '', notes: initial?.notes || '', reimb: initial?.type === 'reimbursement',
   } : blank;
-  const draftKey = `txn-draft:${editing ? 'edit' : 'new'}:${targetOwnerId || 'self'}:${editing ? initial._id : kind}`;
+  const draftKey = `txn-draft:${editing ? 'edit' : 'new'}:${targetOwnerId || 'self'}:${editing ? initialId : kind}`;
   const [f, setF] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(draftKey));
@@ -93,8 +94,8 @@ export default function TxnForm({ kind, initial, targetOwnerId }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const amt = Number(f.amount) || 0;
 
-  const available = summary ? summary.companyBalance + (editing ? initial.companyExpense - initial.received : 0) : null;
-  const afterBalance = summary && !isExp && !f.reimb ? summary.companyBalance - (editing ? initial.received : 0) + amt : null;
+  const available = summary ? summary.companyBalance + (editing ? (initial?.companyExpense || 0) - (initial?.received || 0) : 0) : null;
+  const afterBalance = summary && !isExp && !f.reimb ? summary.companyBalance - (editing ? (initial?.received || 0) : 0) + amt : null;
   const overBy = isExp && f.paymentSource === 'company' && available !== null && amt > available ? amt - Math.max(available, 0) : 0;
 
   async function submit(extra = {}) {
@@ -107,9 +108,10 @@ export default function TxnForm({ kind, initial, targetOwnerId }) {
     if (file) fd.append('bill', file);
     if (removeBill) fd.append('removeBill', 'true');
     try {
+      if (editing && !initialId) throw new Error('This transaction could not be identified. Go back and reopen it.');
       const editEndpoint = targetOwnerId
-        ? `/admin/employees/${targetOwnerId}/transactions/${initial._id}`
-        : `/transactions/${initial._id}`;
+        ? `/admin/employees/${targetOwnerId}/transactions/${initialId}`
+        : `/transactions/${initialId}`;
       await (editing ? api.form('PUT', editEndpoint, fd) : api.form('POST', '/transactions', fd));
       setPrompt(null);
       try { localStorage.removeItem(draftKey); } catch {}
@@ -190,8 +192,8 @@ export default function TxnForm({ kind, initial, targetOwnerId }) {
               <label className="label" htmlFor="bill">Bill / receipt (JPG, PNG, WEBP or PDF, up to 5 MB)</label>
               <input key={fileKey} id="bill" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setFile(e.target.files[0] || null)}
                 className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200" />
-              {editing && initial.hasBill && !removeBill && (
-                <p className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600"><Paperclip size={15} />{initial.billName || 'Bill attached'}
+              {editing && initial?.hasBill && !removeBill && (
+                <p className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600"><Paperclip size={15} />{initial?.billName || 'Bill attached'}
                   <button type="button" onClick={() => setViewBill(true)} className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline"><Eye size={15} />View</button>
                   <label className="flex items-center gap-1.5 text-red-600"><input type="checkbox" onChange={(e) => setRemoveBill(e.target.checked)} />Remove</label>
                   {file && <span className="text-xs text-slate-500">(will be replaced)</span>}</p>
@@ -208,7 +210,7 @@ export default function TxnForm({ kind, initial, targetOwnerId }) {
         </div>
       </form>
 
-      {viewBill && <BillViewer id={initial._id} name={initial.billName} endpoint={targetOwnerId ? `/admin/employees/${targetOwnerId}/transactions/${initial._id}/bill` : undefined} onClose={() => setViewBill(false)} />}
+      {viewBill && initialId && <BillViewer id={initialId} name={initial?.billName} endpoint={targetOwnerId ? `/admin/employees/${targetOwnerId}/transactions/${initialId}/bill` : undefined} onClose={() => setViewBill(false)} />}
 
       {prompt?.code === 'DUPLICATE' && (
         <Modal title="Possible duplicate" onClose={() => setPrompt(null)}>
