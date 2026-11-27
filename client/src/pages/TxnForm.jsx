@@ -7,17 +7,25 @@ import { PageHeader, ErrorBox, Spinner, Modal, BillViewer, useToast } from '../c
 
 const SOURCES = [['company', 'Company money'], ['personal', 'Personal pocket'], ['split', 'Split']];
 
-export default function TxnForm({ kind, initial }) {
+export default function TxnForm({ kind, initial, targetOwnerId }) {
   const nav = useNavigate();
   const toast = useToast();
   const isExp = kind === 'expense';
   const editing = !!initial;
   const blank = { date: today(), amount: '', party: isExp ? '' : 'Company', paymentMode: 'Cash', description: '', category: 'Transport', paymentSource: 'company', personalPaid: '', notes: '', reimb: false };
-  const [f, setF] = useState(() => initial ? {
+  const initialValues = initial ? {
     date: initial.date, amount: String(initial.amount), party: initial.party, paymentMode: initial.paymentMode || 'Cash',
     description: initial.description, category: isExp ? initial.category : 'Transport', paymentSource: initial.paymentSource || 'company',
     personalPaid: initial.personalExpense ? String(initial.personalExpense) : '', notes: initial.notes || '', reimb: initial.type === 'reimbursement',
-  } : blank);
+  } : blank;
+  const draftKey = `txn-draft:${editing ? 'edit' : 'new'}:${targetOwnerId || 'self'}:${editing ? initial._id : kind}`;
+  const [f, setF] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftKey));
+      if (saved?.values) return { ...initialValues, ...saved.values };
+    } catch {}
+    return initialValues;
+  });
   const [file, setFile] = useState(null);
   const [removeBill, setRemoveBill] = useState(false);
   const [viewBill, setViewBill] = useState(false);
@@ -26,8 +34,61 @@ export default function TxnForm({ kind, initial }) {
   const [prompt, setPrompt] = useState(null);
   const [summary, setSummary] = useState(null);
   const [fileKey, setFileKey] = useState(0);
+  const [draftSavedAt, setDraftSavedAt] = useState('');
+  const [draftFound, setDraftFound] = useState(false);
 
-  const loadSummary = () => api.get('/reports/summary').then(setSummary).catch(() => {});
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftKey));
+      if (saved?.values) {
+        setDraftSavedAt(saved.savedAt || '');
+        setDraftFound(true);
+      }
+    } catch {}
+  }, [draftKey]);
+
+  useEffect(() => {
+    const meaningful = ['amount', 'party', 'description', 'notes', 'personalPaid'].some((key) => String(f[key] || '').trim()) ||
+      f.category !== blank.category || f.paymentSource !== blank.paymentSource || f.paymentMode !== blank.paymentMode || f.reimb;
+    if (!meaningful) return;
+    const timer = setTimeout(() => {
+      const savedAt = new Date().toISOString();
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({ values: f, savedAt }));
+        setDraftSavedAt(savedAt);
+        setDraftFound(true);
+      } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [f, draftKey]);
+
+  useEffect(() => {
+    const saveImmediately = () => {
+      const meaningful = ['amount', 'party', 'description', 'notes', 'personalPaid'].some((key) => String(f[key] || '').trim()) ||
+        f.category !== blank.category || f.paymentSource !== blank.paymentSource || f.paymentMode !== blank.paymentMode || f.reimb;
+      if (meaningful) {
+        try { localStorage.setItem(draftKey, JSON.stringify({ values: f, savedAt: new Date().toISOString() })); } catch {}
+      }
+    };
+    const saveOnVisibility = () => { if (document.visibilityState === 'hidden') saveImmediately(); };
+    window.addEventListener('beforeunload', saveImmediately);
+    document.addEventListener('visibilitychange', saveOnVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', saveImmediately);
+      document.removeEventListener('visibilitychange', saveOnVisibility);
+    };
+  }, [f, draftKey]);
+
+  function discardDraft() {
+    try { localStorage.removeItem(draftKey); } catch {}
+    setDraftFound(false);
+    setDraftSavedAt('');
+    setF(initialValues);
+  }
+
+  const loadSummary = () => api.get(targetOwnerId ? `/admin/employees/${targetOwnerId}/transactions` : '/reports/summary')
+    .then((data) => setSummary(targetOwnerId ? data.summary : data))
+    .catch(() => {});
   useEffect(() => { loadSummary(); }, []);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const amt = Number(f.amount) || 0;
@@ -46,10 +107,16 @@ export default function TxnForm({ kind, initial }) {
     if (file) fd.append('bill', file);
     if (removeBill) fd.append('removeBill', 'true');
     try {
-      await (editing ? api.form('PUT', `/transactions/${initial._id}`, fd) : api.form('POST', '/transactions', fd));
+      const editEndpoint = targetOwnerId
+        ? `/admin/employees/${targetOwnerId}/transactions/${initial._id}`
+        : `/transactions/${initial._id}`;
+      await (editing ? api.form('PUT', editEndpoint, fd) : api.form('POST', '/transactions', fd));
       setPrompt(null);
+      try { localStorage.removeItem(draftKey); } catch {}
+      setDraftFound(false);
+      setDraftSavedAt('');
       toast(editing ? 'Changes saved' : isExp ? 'Expense saved' : f.reimb ? 'Reimbursement saved' : 'Money added');
-      if (editing) return nav('/transactions');
+      if (editing) return nav(targetOwnerId ? '/employees' : '/transactions');
       setF({ ...blank, date: f.date, category: f.category, paymentSource: f.paymentSource, paymentMode: f.paymentMode, party: isExp ? '' : f.party, reimb: f.reimb });
       setFile(null); setFileKey((k) => k + 1); loadSummary();
     } catch (e) {
@@ -67,6 +134,14 @@ export default function TxnForm({ kind, initial }) {
       <PageHeader title={title} subtitle={isExp ? 'Record what was spent and where the money came from.' : 'Record money received from the company. It is added to your available balance.'} />
       <form onSubmit={onSubmit} className="card mx-auto max-w-3xl p-5 sm:p-6">
         <ErrorBox>{errs.length > 1 ? <ul className="list-disc pl-4">{errs.map((x) => <li key={x}>{x}</li>)}</ul> : errs[0]}</ErrorBox>
+        {draftFound && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            <span>
+              Draft saved{draftSavedAt ? ` at ${new Date(draftSavedAt).toLocaleString()}` : ''}. Details will be restored after closing or switching apps.
+            </span>
+            <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={discardDraft}>Discard draft</button>
+          </div>
+        )}
 
         {!isExp && (
           <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
@@ -133,7 +208,7 @@ export default function TxnForm({ kind, initial }) {
         </div>
       </form>
 
-      {viewBill && <BillViewer id={initial._id} name={initial.billName} onClose={() => setViewBill(false)} />}
+      {viewBill && <BillViewer id={initial._id} name={initial.billName} endpoint={targetOwnerId ? `/admin/employees/${targetOwnerId}/transactions/${initial._id}/bill` : undefined} onClose={() => setViewBill(false)} />}
 
       {prompt?.code === 'DUPLICATE' && (
         <Modal title="Possible duplicate" onClose={() => setPrompt(null)}>

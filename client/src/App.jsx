@@ -38,6 +38,20 @@ function EditTxn() {
   return <TxnForm key={id} kind={t.type === 'expense' ? 'expense' : 'money'} initial={t} />;
 }
 
+function AdminEditTxn() {
+  const { employeeId, id } = useParams();
+  const [t, setT] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    api.get(`/admin/employees/${employeeId}/transactions/${id}`)
+      .then(setT)
+      .catch((e) => setErr(e.message));
+  }, [employeeId, id]);
+  if (err) return <ErrorBox>{err}</ErrorBox>;
+  if (!t) return <Loading />;
+  return <TxnForm key={`${employeeId}-${id}`} kind={t.type === 'expense' ? 'expense' : 'money'} initial={t} targetOwnerId={employeeId} />;
+}
+
 export default function App() {
   const { user, ready } = useAuth();
   return (
@@ -49,6 +63,7 @@ export default function App() {
       <Route element={<Protected />}>
         <Route path="/" element={user?.role === 'admin' ? <AdminDashboard /> : <Dashboard />} />
         <Route path="/employees" element={<AdminOnly><Employees /></AdminOnly>} />
+        <Route path="/admin/edit/:employeeId/:id" element={<AdminOnly><AdminEditTxn /></AdminOnly>} />
         <Route path="/add-money" element={<TxnForm key="money" kind="money" />} />
         <Route path="/add-expense" element={<TxnForm key="expense" kind="expense" />} />
         <Route path="/edit/:id" element={<EditTxn />} />

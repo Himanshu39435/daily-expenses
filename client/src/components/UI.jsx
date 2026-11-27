@@ -104,15 +104,16 @@ export function Confirm({ title, message, confirmText = 'Confirm', danger, busy,
 }
 
 /* ---------- Bill viewer (fetches with the auth token) ---------- */
-export function BillViewer({ id, name, onClose }) {
+export function BillViewer({ id, name, onClose, endpoint }) {
   const [url, setUrl] = useState(null);
   const [type, setType] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => {
     let u;
-    api.blob(`/transactions/${id}/bill`).then((b) => { u = URL.createObjectURL(b); setType(b.type); setUrl(u); }).catch((e) => setErr(e.message));
+    const billEndpoint = endpoint || `/transactions/${id}/bill`;
+    api.blob(billEndpoint).then((b) => { u = URL.createObjectURL(b); setType(b.type); setUrl(u); }).catch((e) => setErr(e.message));
     return () => u && URL.revokeObjectURL(u);
-  }, [id]);
+  }, [id, endpoint]);
   return (
     <Modal title={name || 'Bill / receipt'} onClose={onClose} wide>
       {err ? <ErrorBox>{err}</ErrorBox> : !url ? <Loading /> : type.startsWith('image/')

@@ -16,6 +16,15 @@ const schema = new mongoose.Schema(
     personalPaid: { type: Number, default: 0, min: 0 },
     notes: { type: String, default: '', maxlength: 500 },
     billFile: String, billName: String, billMime: String,
+    createdByName: { type: String, default: '' },
+    lastEditedByName: { type: String, default: '' },
+    lastEditedAt: Date,
+    editCount: { type: Number, default: 0 },
+    editHistory: [{
+      editedByName: String,
+      editedAt: Date,
+      changes: { type: Object, default: {} },
+    }],
   },
   { timestamps: true }
 );

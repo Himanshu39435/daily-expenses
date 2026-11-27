@@ -1,8 +1,11 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const DeletedTransaction = require('../models/DeletedTransaction');
 const auth = require('../middleware/auth');
 const wrap = require('../middleware/wrap');
 const { upload, uploadDir, removeFile } = require('../middleware/upload');
@@ -49,6 +52,7 @@ async function guard(req, res, data, excludeId) {
 router.get('/', wrap(async (req, res) => {
   const txns = await Transaction.find({ owner: req.user._id }).lean();
   let rows = buildLedger(req.user.openingBalance, txns); // running balances are always computed on the FULL ledger
+  rows = rows.map(({ lastEditedByName, lastEditedAt, editCount, editHistory, ...safe }) => safe);
   const { search, from, to, category, type, source, sort } = req.query;
   if (from) rows = rows.filter((r) => r.date >= from);
   if (to) rows = rows.filter((r) => r.date <= to);
@@ -71,7 +75,14 @@ router.get('/', wrap(async (req, res) => {
 router.get('/:id', wrap(async (req, res) => {
   const doc = await load(req, res); if (!doc) return;
   const all = await Transaction.find({ owner: req.user._id }).lean();
-  res.json(buildLedger(req.user.openingBalance, all).find((r) => r._id === String(doc._id)));
+  const row = buildLedger(req.user.openingBalance, all).find((r) => r._id === String(doc._id));
+  if (row) {
+    delete row.lastEditedByName;
+    delete row.lastEditedAt;
+    delete row.editCount;
+    delete row.editHistory;
+  }
+  res.json(row);
 }));
 
 router.post('/', upload.single('bill'), wrap(async (req, res) => {
@@ -82,6 +93,7 @@ router.post('/', upload.single('bill'), wrap(async (req, res) => {
   const doc = await Transaction.create({
     ...data, owner: req.user._id, txnId: `TXN-${String(txnSeq).padStart(5, '0')}`,
     billFile: req.file?.filename, billName: req.file?.originalname, billMime: req.file?.mimetype,
+    createdByName: req.user.name,
   });
   res.status(201).json({ ok: true, txnId: doc.txnId, id: doc._id });
 }));
@@ -91,7 +103,29 @@ router.put('/:id', upload.single('bill'), wrap(async (req, res) => {
   const { errors, data } = parseTxn(req.body);
   if (errors.length) { removeFile(req.file?.filename); return res.status(400).json({ message: errors[0], errors }); }
   if (await guard(req, res, data, doc._id)) { removeFile(req.file?.filename); return; }
+  const trackedFields = ['date', 'amount', 'party', 'paymentMode', 'description', 'category', 'notes', 'paymentSource', 'companyPaid', 'personalPaid'];
+  const changes = {};
+  trackedFields.forEach((key) => {
+    const before = key === 'date' ? iso(doc[key]) : String(doc[key] ?? '');
+    const after = key === 'date' ? iso(data[key]) : String(data[key] ?? '');
+    if (before !== after) changes[key] = { before: doc[key] instanceof Date ? iso(doc[key]) : doc[key], after: data[key] };
+  });
+  if (req.file) changes.bill = { before: doc.billName || 'No bill', after: req.file.originalname };
+  else if (flag(req.body.removeBill)) changes.bill = { before: doc.billName || 'Bill attached', after: 'Removed' };
+  const editedAt = new Date();
+  if (Object.keys(changes).length) {
+    doc.editHistory = [...(doc.editHistory || []), {
+      editedByName: req.user.name,
+      editedAt,
+      changes,
+    }];
+  }
   doc.set(data);
+  if (Object.keys(changes).length) {
+    doc.lastEditedByName = req.user.name;
+    doc.lastEditedAt = editedAt;
+    doc.editCount = (doc.editCount || 0) + 1;
+  }
   if (req.file) {
     removeFile(doc.billFile);
     doc.set({ billFile: req.file.filename, billName: req.file.originalname, billMime: req.file.mimetype });
@@ -105,6 +139,41 @@ router.put('/:id', upload.single('bill'), wrap(async (req, res) => {
 
 router.delete('/:id', wrap(async (req, res) => {
   const doc = await load(req, res); if (!doc) return;
+  let archivedBillFile;
+  if (doc.billFile) {
+    try {
+      const source = path.join(uploadDir(), path.basename(doc.billFile));
+      if (fs.existsSync(source)) {
+        const ext = path.extname(doc.billFile);
+        archivedBillFile = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}-deleted${ext}`;
+        fs.mkdirSync(uploadDir(), { recursive: true });
+        fs.copyFileSync(source, path.join(uploadDir(), archivedBillFile));
+      }
+    } catch { /* Keep the deleted transaction restorable even if its bill is unavailable. */ }
+  }
+  await DeletedTransaction.create({
+    originalOwner: req.user._id,
+    deletedBy: req.user._id,
+    deletedByName: req.user.name,
+    txnId: doc.txnId,
+    type: doc.type,
+    date: doc.date,
+    description: doc.description,
+    category: doc.category,
+    party: doc.party,
+    amount: doc.amount,
+    paymentMode: doc.paymentMode,
+    paymentSource: doc.paymentSource,
+    companyPaid: doc.companyPaid,
+    personalPaid: doc.personalPaid,
+    notes: doc.notes,
+    billFile: archivedBillFile,
+    billName: doc.billName,
+    billMime: doc.billMime,
+    lastEditedByName: doc.lastEditedByName,
+    lastEditedAt: doc.lastEditedAt,
+    editCount: doc.editCount,
+  });
   removeFile(doc.billFile);
   await doc.deleteOne();
   res.json({ ok: true });

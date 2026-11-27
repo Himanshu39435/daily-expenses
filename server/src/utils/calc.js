@@ -42,6 +42,14 @@ function buildLedger(opening, txns) {
       description: t.description, category: t.category, party: t.party,
       paymentMode: t.paymentMode, paymentSource: t.paymentSource, amount: r2(t.amount),
       notes: t.notes || '', hasBill: !!t.billFile, billName: t.billName || '',
+      createdByName: t.createdByName || '', lastEditedByName: t.lastEditedByName || '',
+      lastEditedAt: t.lastEditedAt ? new Date(t.lastEditedAt).toISOString() : '',
+      editCount: t.editCount || 0,
+      editHistory: (t.editHistory || []).map((entry) => ({
+        editedByName: entry.editedByName || '',
+        editedAt: entry.editedAt ? new Date(entry.editedAt).toISOString() : '',
+        changes: entry.changes || {},
+      })),
       ...n, balance: bal, personalRunning: per, reimbursedRunning: rei,
     };
   });

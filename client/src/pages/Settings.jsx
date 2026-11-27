@@ -72,7 +72,7 @@ export default function Settings() {
 
         <div className="card p-5 lg:col-span-2">
           <h2 className="font-semibold text-slate-900">Backup and restore</h2>
-          <p className="mt-1 text-sm text-slate-500">The backup file contains your settings, every transaction and the attached bills. Keep it somewhere safe. Restoring replaces all current data.</p>
+          <p className="mt-1 text-sm text-slate-500">The backup contains settings, active transactions, deleted-transaction recovery records and attached bills. For administrators, it includes the company team. Restoring replaces current data and also restores transactions listed as deleted.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button className="btn-ghost" onClick={backup} disabled={busy === 'backup'}>{busy === 'backup' ? <Spinner /> : <Download size={16} />}Download backup</button>
             <button className="btn-ghost" onClick={() => fileRef.current.click()}><Upload size={16} />Restore from backup</button>

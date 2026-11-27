@@ -1,9 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, Mail, Pencil, ShieldCheck, UserCheck, UserPlus, UserX, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Copy, Mail, Pencil, Receipt, ShieldCheck, UserCheck, UserPlus, UserX, X } from 'lucide-react';
 import { api } from '../api';
+import { fmtDate, inr } from '../utils';
+import { useAuth } from '../AuthContext';
 import { Confirm, ErrorBox, Loading, Modal, PageHeader, Spinner, useToast } from '../components/UI';
 
+const AUDIT_LABELS = {
+  date: 'Expense date',
+  amount: 'Amount',
+  party: 'Paid to / Received from',
+  paymentMode: 'Payment mode',
+  description: 'Item / Description',
+  category: 'Category',
+  notes: 'Notes',
+  paymentSource: 'Payment source',
+  companyPaid: 'Company amount',
+  personalPaid: 'Personal amount',
+  bill: 'Bill / Receipt',
+};
+
+const auditValue = (field, value) => {
+  if (value === undefined || value === null || value === '') return '(empty)';
+  if (['amount', 'companyPaid', 'personalPaid'].includes(field)) return inr(Number(value));
+  return String(value);
+};
+
 export default function Employees() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [email, setEmail] = useState('');
   const [err, setErr] = useState('');
@@ -11,6 +36,8 @@ export default function Employees() {
   const [inviteLink, setInviteLink] = useState('');
   const [editing, setEditing] = useState(null);
   const [pendingStatus, setPendingStatus] = useState(null);
+  const [employeeTransactions, setEmployeeTransactions] = useState(null);
+  const [transactionsBusy, setTransactionsBusy] = useState(false);
   const toast = useToast();
   const load = useCallback(() => api.get('/admin/employees').then(setData).catch((e) => setErr(e.message)), []);
   useEffect(() => { load(); }, [load]);
@@ -60,6 +87,21 @@ export default function Employees() {
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
+  async function openTransactions(member) {
+    setErr('');
+    setTransactionsBusy(true);
+    setEmployeeTransactions({ employee: member, rows: [] });
+    try {
+      const data = await api.get(`/admin/employees/${member._id}/transactions`);
+      setEmployeeTransactions(data);
+    } catch (e) {
+      setEmployeeTransactions(null);
+      setErr(e.message);
+    } finally {
+      setTransactionsBusy(false);
+    }
+  }
+
   function memberList(title, members) {
     return (
       <section className="card mt-5 overflow-hidden">
@@ -77,6 +119,7 @@ export default function Employees() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {member.role === 'employee' && <button className="btn-ghost" onClick={() => openTransactions(member)}><Receipt size={15} />Transactions</button>}
                 <button className="btn-ghost" onClick={() => setEditing({ ...member })}><Pencil size={15} />Edit</button>
                 <button
                   className={`btn-ghost ${member.isActive ? 'text-red-600' : 'text-emerald-700'}`}
@@ -140,6 +183,60 @@ export default function Employees() {
             <button className="btn-primary" disabled={busy}>{busy && <Spinner />}Save changes</button>
           </div>
         </form>
+      </Modal>}
+      {employeeTransactions && <Modal title={`${employeeTransactions.employee.name}'s transactions`} onClose={() => setEmployeeTransactions(null)} wide>
+        {transactionsBusy ? <Loading /> : employeeTransactions.rows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">No transactions recorded for this employee.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>
+                <th className="px-3 py-2">Date</th><th className="px-3 py-2">Transaction</th><th className="px-3 py-2">Description</th>
+                <th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2" />
+              </tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {employeeTransactions.rows.map((row) => (
+                  <tr key={row._id}>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-500">{fmtDate(row.date)}</td>
+                    <td className="px-3 py-3 text-xs text-slate-500">{row.txnId}</td>
+                    <td className="px-3 py-3">
+                      <p className="font-medium text-slate-800">{row.description}</p><p className="text-xs text-slate-500">{row.category}</p>
+                      {user?.isPrimaryAdmin && row.lastEditedAt && (
+                        <details className="mt-2 max-w-md rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5">
+                          <summary className="cursor-pointer text-xs font-semibold text-amber-800">
+                            Edited by {row.lastEditedByName || 'Unknown'} · {new Date(row.lastEditedAt).toLocaleString()}
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            {(row.editHistory || []).slice(-10).reverse().map((entry, index) => (
+                              <div key={`${entry.editedAt}-${index}`} className="text-xs text-slate-700">
+                                <p className="font-medium">{entry.editedByName || 'Unknown'} · {entry.editedAt ? new Date(entry.editedAt).toLocaleString() : ''}</p>
+                                <ul className="mt-1 space-y-1">
+                                  {Object.entries(entry.changes || {}).map(([field, change]) => (
+                                    <li key={field} className="rounded bg-white px-2 py-1">
+                                      <span className="font-medium">{AUDIT_LABELS[field] || field}</span>
+                                      <span className="mx-1 text-slate-400">:</span>
+                                      <span className="text-red-700">{auditValue(field, change.before)}</span>
+                                      <span className="mx-1 text-slate-400">→</span>
+                                      <span className="font-semibold text-emerald-700">{auditValue(field, change.after)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </td>
+                    <td className={`whitespace-nowrap px-3 py-3 text-right font-semibold ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>{row.type === 'expense' ? '-' : '+'}{inr(row.amount)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <button className="btn-ghost" onClick={() => navigate(`/admin/edit/${employeeTransactions.employee._id}/${row._id}`)}><Pencil size={15} />Edit</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Modal>}
       {pendingStatus && <Confirm
         danger

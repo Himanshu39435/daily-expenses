@@ -7,10 +7,19 @@ const Transaction = require('../models/Transaction');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/requireRole');
 const wrap = require('../middleware/wrap');
+const { upload, uploadDir, removeFile } = require('../middleware/upload');
 const { buildLedger, summarize } = require('../utils/calc');
 const { roleFor, companyIdFor, canManageMember } = require('../utils/roles');
+const { parseTxn } = require('../utils/validate');
+const path = require('path');
 
 router.use(auth, requireRole('admin'));
+
+const ownerAuditView = (req, row) => {
+  if (req.user.isPrimaryAdmin === true) return row;
+  const { lastEditedByName, lastEditedAt, editCount, editHistory, ...safe } = row;
+  return safe;
+};
 
 const memberView = (member) => ({
   _id: String(member._id),
@@ -39,7 +48,7 @@ router.get('/dashboard', wrap(async (req, res) => {
       summary: summarize(member.openingBalance, userTxns),
       isActive: member.isActive !== false,
       recent: buildLedger(member.openingBalance, userTxns).slice(-5).reverse()
-        .map((row) => ({ ...row, userName: member.name })),
+        .map((row) => ownerAuditView(req, { ...row, userName: member.name })),
     };
   });
   const summary = users.reduce((total, member) => {
@@ -77,6 +86,124 @@ router.get('/employees', wrap(async (req, res) => {
     admins: req.user.isPrimaryAdmin === true ? members.filter((member) => member.role === 'admin') : [],
     invites,
     canManageAdmins: req.user.isPrimaryAdmin === true,
+  });
+}));
+
+async function findManagedEmployee(req, res) {
+  if (!mongoose.isValidObjectId(req.params.employeeId)) {
+    res.status(404).json({ message: 'Employee not found' });
+    return null;
+  }
+  const companyId = companyIdFor(req.user);
+  const employee = await User.findOne({
+    _id: req.params.employeeId,
+    organizationId: companyId,
+    isPrimaryAdmin: { $ne: true },
+  }).select('name email role isPrimaryAdmin isCompanyAdmin isActive openingBalance');
+  if (!employee || roleFor(employee) !== 'employee') {
+    res.status(404).json({ message: 'Employee not found' });
+    return null;
+  }
+  return employee;
+}
+
+router.get('/employees/:employeeId/transactions', wrap(async (req, res) => {
+  const employee = await findManagedEmployee(req, res);
+  if (!employee) return;
+  const txns = await Transaction.find({ owner: employee._id }).lean();
+  res.json({
+    employee: memberView(employee),
+    summary: summarize(employee.openingBalance, txns),
+    rows: buildLedger(employee.openingBalance, txns).reverse().map((row) => ownerAuditView(req, row)),
+  });
+}));
+
+router.get('/employees/:employeeId/transactions/:id', wrap(async (req, res) => {
+  const employee = await findManagedEmployee(req, res);
+  if (!employee) return;
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Transaction not found' });
+  const doc = await Transaction.findOne({ _id: req.params.id, owner: employee._id }).lean();
+  if (!doc) return res.status(404).json({ message: 'Transaction not found' });
+  const all = await Transaction.find({ owner: employee._id }).lean();
+  res.json(buildLedger(employee.openingBalance, all).find((row) => row._id === String(doc._id)));
+}));
+
+router.put('/employees/:employeeId/transactions/:id', upload.single('bill'), wrap(async (req, res) => {
+  const employee = await findManagedEmployee(req, res);
+  if (!employee) { removeFile(req.file?.filename); return; }
+  if (!mongoose.isValidObjectId(req.params.id)) { removeFile(req.file?.filename); return res.status(404).json({ message: 'Transaction not found' }); }
+  const doc = await Transaction.findOne({ _id: req.params.id, owner: employee._id });
+  if (!doc) { removeFile(req.file?.filename); return res.status(404).json({ message: 'Transaction not found' }); }
+  const { errors, data } = parseTxn(req.body);
+  if (errors.length) { removeFile(req.file?.filename); return res.status(400).json({ message: errors[0], errors }); }
+
+  const all = await Transaction.find({ owner: employee._id }).lean();
+  const others = all.filter((txn) => String(txn._id) !== String(doc._id));
+  if (req.body.force !== 'true') {
+    const duplicate = others.find((txn) => txn.type === data.type &&
+      new Date(txn.date).toISOString().slice(0, 10) === new Date(data.date).toISOString().slice(0, 10) &&
+      txn.amount === data.amount && String(txn.party).trim().toLowerCase() === String(data.party).trim().toLowerCase() &&
+      String(txn.description).trim().toLowerCase() === String(data.description).trim().toLowerCase() &&
+      txn.category === data.category);
+    if (duplicate) {
+      removeFile(req.file?.filename);
+      return res.status(409).json({ code: 'DUPLICATE', existing: duplicate.txnId, message: `Looks like a duplicate of ${duplicate.txnId} (same date, amount, payee and description).` });
+    }
+  }
+  if (data.type === 'expense' && data.companyPaid > 0 && req.body.allowOverdraw !== 'true') {
+    const available = summarize(employee.openingBalance, others).companyBalance;
+    if (data.companyPaid > available + 0.004) {
+      removeFile(req.file?.filename);
+      return res.status(409).json({
+        code: 'INSUFFICIENT_BALANCE', available: Math.max(available, 0), requested: data.companyPaid, amount: data.amount,
+        message: `Company balance is \u20B9${Math.max(available, 0).toLocaleString('en-IN')} but \u20B9${data.companyPaid.toLocaleString('en-IN')} was marked as paid from company money.`,
+      });
+    }
+  }
+
+  const trackedFields = ['date', 'amount', 'party', 'paymentMode', 'description', 'category', 'notes', 'paymentSource', 'companyPaid', 'personalPaid'];
+  const changes = {};
+  trackedFields.forEach((key) => {
+    const before = key === 'date' ? new Date(doc[key]).toISOString().slice(0, 10) : String(doc[key] ?? '');
+    const after = key === 'date' ? new Date(data[key]).toISOString().slice(0, 10) : String(data[key] ?? '');
+    if (before !== after) changes[key] = { before: doc[key] instanceof Date ? before : doc[key], after: data[key] };
+  });
+  if (req.file) changes.bill = { before: doc.billName || 'No bill', after: req.file.originalname };
+  else if (req.body.removeBill === 'true') changes.bill = { before: doc.billName || 'Bill attached', after: 'Removed' };
+  const editedAt = new Date();
+  if (Object.keys(changes).length) {
+    doc.editHistory = [...(doc.editHistory || []), {
+      editedByName: req.user.name,
+      editedAt,
+      changes,
+    }];
+  }
+  doc.set(data);
+  if (Object.keys(changes).length) {
+    doc.lastEditedByName = req.user.name;
+    doc.lastEditedAt = editedAt;
+    doc.editCount = (doc.editCount || 0) + 1;
+  }
+  if (req.file) {
+    removeFile(doc.billFile);
+    doc.set({ billFile: req.file.filename, billName: req.file.originalname, billMime: req.file.mimetype });
+  } else if (req.body.removeBill === 'true') {
+    removeFile(doc.billFile);
+    doc.set({ billFile: undefined, billName: undefined, billMime: undefined });
+  }
+  await doc.save();
+  res.json({ ok: true, txnId: doc.txnId });
+}));
+
+router.get('/employees/:employeeId/transactions/:id/bill', wrap(async (req, res) => {
+  const employee = await findManagedEmployee(req, res);
+  if (!employee) return;
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: 'Transaction not found' });
+  const doc = await Transaction.findOne({ _id: req.params.id, owner: employee._id });
+  if (!doc || !doc.billFile) return res.status(404).json({ message: doc ? 'No bill attached' : 'Transaction not found' });
+  res.type(doc.billMime || 'application/octet-stream');
+  res.sendFile(path.join(uploadDir(), path.basename(doc.billFile)), (e) => {
+    if (e && !res.headersSent) res.status(404).json({ message: 'Bill file is missing on the server' });
   });
 }));
 

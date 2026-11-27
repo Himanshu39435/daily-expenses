@@ -3,9 +3,22 @@ import { Link } from 'react-router-dom';
 import { Building2, HandCoins, Receipt, Users, Undo2, Wallet } from 'lucide-react';
 import { api } from '../api';
 import { inr, fmtDate } from '../utils';
+import { useAuth } from '../AuthContext';
 import { ErrorBox, Loading, PageHeader, Stat } from '../components/UI';
 
+const AUDIT_LABELS = {
+  date: 'Expense date', amount: 'Amount', party: 'Paid to / Received from', paymentMode: 'Payment mode',
+  description: 'Item / Description', category: 'Category', notes: 'Notes', paymentSource: 'Payment source',
+  companyPaid: 'Company amount', personalPaid: 'Personal amount', bill: 'Bill / Receipt',
+};
+const auditValue = (field, value) => {
+  if (value === undefined || value === null || value === '') return '(empty)';
+  if (['amount', 'companyPaid', 'personalPaid'].includes(field)) return inr(Number(value));
+  return String(value);
+};
+
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   useEffect(() => { api.get('/admin/dashboard').then(setData).catch((e) => setErr(e.message)); }, []);
@@ -63,7 +76,35 @@ export default function AdminDashboard() {
           <ul className="divide-y divide-slate-100">
             {recent.map((row) => (
               <li key={`${row._id}-${row.userName}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-800">{row.description}</p><p className="text-xs text-slate-500">{row.userName} · {fmtDate(row.date)} · {row.category}</p></div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">{row.description}</p>
+                  <p className="text-xs text-slate-500">{row.userName} · {fmtDate(row.date)} · {row.category}</p>
+                  {user?.isPrimaryAdmin && row.lastEditedAt && (
+                    <details className="mt-2 max-w-lg rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5">
+                      <summary className="cursor-pointer text-xs font-semibold text-amber-800">
+                        Edited by {row.lastEditedByName || 'Unknown'} · {new Date(row.lastEditedAt).toLocaleString()}
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {(row.editHistory || []).slice(-10).reverse().map((entry, index) => (
+                          <div key={`${entry.editedAt}-${index}`} className="text-xs text-slate-700">
+                            <p className="font-medium">{entry.editedByName || 'Unknown'} · {entry.editedAt ? new Date(entry.editedAt).toLocaleString() : ''}</p>
+                            <ul className="mt-1 space-y-1">
+                              {Object.entries(entry.changes || {}).map(([field, change]) => (
+                                <li key={field} className="rounded bg-white px-2 py-1">
+                                  <span className="font-medium">{AUDIT_LABELS[field] || field}</span>
+                                  <span className="mx-1 text-slate-400">:</span>
+                                  <span className="text-red-700">{auditValue(field, change.before)}</span>
+                                  <span className="mx-1 text-slate-400">→</span>
+                                  <span className="font-semibold text-emerald-700">{auditValue(field, change.after)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
                 <p className={`shrink-0 text-sm font-semibold ${row.type === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>{row.type === 'expense' ? '-' : '+'}{inr(row.amount)}</p>
               </li>
             ))}

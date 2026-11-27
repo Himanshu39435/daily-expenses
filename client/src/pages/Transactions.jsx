@@ -93,7 +93,9 @@ export default function Transactions() {
                 <tr key={r._id} className="hover:bg-slate-50/60">
                   <td className="td whitespace-nowrap">{fmtDate(r.date)}</td>
                   <td className="td whitespace-nowrap text-xs text-slate-500">{r.txnId}</td>
-                  <td className="td max-w-[220px] font-medium text-slate-800">{r.description}</td>
+                  <td className="td max-w-[220px] font-medium text-slate-800">
+                    {r.description}
+                  </td>
                   <td className="td"><span className={badge(r)}>{r.category}</span></td>
                   <td className="td">{r.party}</td>
                   <td className="td text-right">{money(r.received || r.reimbursed, r.type === 'reimbursement' ? 'font-medium text-amber-600' : 'font-medium text-emerald-600')}</td>
@@ -117,7 +119,10 @@ export default function Transactions() {
           {view.map((r) => (
             <li key={r._id} className="card p-4">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0"><p className="font-medium text-slate-900">{r.description}</p><p className="mt-0.5 text-xs text-slate-500">{fmtDate(r.date)} - {r.txnId}</p></div>
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-900">{r.description}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{fmtDate(r.date)} - {r.txnId}</p>
+                </div>
                 <Actions r={r} />
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className={badge(r)}>{r.category}</span>{r.party && <span className="text-slate-500">{r.type === 'expense' ? 'Paid to' : 'From'} {r.party}</span>}</div>
@@ -143,7 +148,7 @@ export default function Transactions() {
       </>)}
 
       {del && <Confirm danger busy={busy} title="Delete this transaction?" confirmText="Delete" onCancel={() => setDel(null)} onConfirm={remove}
-        message={`${del.txnId} - ${del.description} (${inr(del.amount)} on ${fmtDate(del.date)}) will be permanently deleted and all balances will be recalculated. This cannot be undone.`} />}
+        message={`${del.txnId} - ${del.description} (${inr(del.amount)} on ${fmtDate(del.date)}) will be removed and saved in your owner backup for recovery. Balances will be recalculated.`} />}
       {bill && <BillViewer id={bill._id} name={bill.billName} onClose={() => setBill(null)} />}
     </>
   );
