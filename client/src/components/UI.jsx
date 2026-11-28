@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Loader2, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { api } from '../api';
 import { inr } from '../utils';
 
@@ -30,6 +30,30 @@ export function ToastProvider({ children }) {
 /* ---------- Layout bits ---------- */
 export const Spinner = ({ className = '' }) => <Loader2 className={`animate-spin ${className}`} size={20} />;
 export const Loading = () => <div className="flex justify-center py-20 text-blue-700"><Spinner /></div>;
+
+export function PasswordInput({ className = '', label = 'password', ...props }) {
+  const [visible, setVisible] = useState(false);
+  const action = visible ? 'Hide' : 'Show';
+
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? 'text' : 'password'}
+        className={`input pr-11 ${className}`}
+      />
+      <button
+        type="button"
+        className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={`${action} ${label}`}
+        title={`${action} ${label}`}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+}
 
 export function PageHeader({ title, subtitle, children }) {
   return (

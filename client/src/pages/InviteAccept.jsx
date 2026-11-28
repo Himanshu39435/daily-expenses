@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { IndianRupee } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { ErrorBox, Spinner } from '../components/UI';
+import { ErrorBox, PasswordInput, Spinner } from '../components/UI';
 
 export default function InviteAccept() {
   const { token } = useParams();
@@ -28,7 +28,7 @@ export default function InviteAccept() {
         <ErrorBox>{err}</ErrorBox>
         <div className="space-y-4">
           <div><label className="label" htmlFor="invite-name">Your name</label><input id="invite-name" className="input" required autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div><label className="label" htmlFor="invite-password">Password</label><input id="invite-password" type="password" className="input" required minLength={8} autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /><p className="mt-1 text-xs text-slate-500">At least 8 characters.</p></div>
+          <div><label className="label" htmlFor="invite-password">Password</label><PasswordInput id="invite-password" required minLength={8} autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /><p className="mt-1 text-xs text-slate-500">At least 8 characters.</p></div>
         </div>
         <button className="btn-primary mt-6 w-full" disabled={busy}>{busy && <Spinner />}Join company</button>
         <p className="mt-5 text-center text-sm text-slate-500">Already have an account? <Link to="/login" className="font-semibold text-blue-700 hover:underline">Sign in</Link></p>

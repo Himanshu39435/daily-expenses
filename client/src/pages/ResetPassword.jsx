@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../AuthContext';
-import { ErrorBox, Spinner } from '../components/UI';
+import { ErrorBox, PasswordInput, Spinner } from '../components/UI';
 
 export default function ResetPassword() {
   const { token } = useParams();
@@ -38,8 +38,8 @@ export default function ResetPassword() {
             <p className="mb-6 mt-1 text-sm text-slate-500">Choose a new password with at least 8 characters.</p>
             <ErrorBox>{err}</ErrorBox>
             <div className="space-y-4">
-              <div><label className="label" htmlFor="new-password">New password</label><input id="new-password" type="password" className="input" required minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-              <div><label className="label" htmlFor="confirm-password">Confirm new password</label><input id="confirm-password" type="password" className="input" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
+              <div><label className="label" htmlFor="new-password">New password</label><PasswordInput id="new-password" required minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+              <div><label className="label" htmlFor="confirm-password">Confirm new password</label><PasswordInput id="confirm-password" label="confirm password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
             </div>
             <button className="btn-primary mt-6 w-full" disabled={busy}>{busy && <Spinner />}Set new password</button>
             <p className="mt-5 text-center text-sm text-slate-500"><Link to="/login" className="font-semibold text-blue-700 hover:underline">Back to sign in</Link></p>

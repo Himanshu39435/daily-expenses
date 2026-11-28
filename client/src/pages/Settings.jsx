@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Download, Upload } from 'lucide-react';
 import { api, downloadFile } from '../api';
 import { useAuth } from '../AuthContext';
-import { PageHeader, ErrorBox, Spinner, Confirm, useToast } from '../components/UI';
+import { PageHeader, ErrorBox, PasswordInput, Spinner, Confirm, useToast } from '../components/UI';
 
 export default function Settings() {
   const { user, setUser, logout } = useAuth();
@@ -64,8 +64,8 @@ export default function Settings() {
         <form onSubmit={savePw} className="card p-5">
           <h2 className="font-semibold text-slate-900">Change password</h2>
           <div className="mt-4 space-y-4">
-            <div><label className="label" htmlFor="cp">Current password</label><input id="cp" type="password" className="input" required autoComplete="current-password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} /></div>
-            <div><label className="label" htmlFor="np">New password</label><input id="np" type="password" className="input" required minLength={8} autoComplete="new-password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} /></div>
+            <div><label className="label" htmlFor="cp">Current password</label><PasswordInput id="cp" label="current password" required autoComplete="current-password" value={pw.currentPassword} onChange={(e) => setPw({ ...pw, currentPassword: e.target.value })} /></div>
+            <div><label className="label" htmlFor="np">New password</label><PasswordInput id="np" label="new password" required minLength={8} autoComplete="new-password" value={pw.newPassword} onChange={(e) => setPw({ ...pw, newPassword: e.target.value })} /></div>
           </div>
           <button className="btn-primary mt-5" disabled={busy === 'pw'}>{busy === 'pw' && <Spinner />}Update password</button>
         </form>

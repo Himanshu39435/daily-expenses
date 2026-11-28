@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IndianRupee } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { ErrorBox, Spinner } from '../components/UI';
+import { ErrorBox, PasswordInput, Spinner } from '../components/UI';
 
 export default function Login() {
   const { login, register, registerEmployee } = useAuth();
@@ -46,12 +46,12 @@ export default function Login() {
               <div><label className="label" htmlFor="n">Your name</label><input id="n" className="input" required value={f.name} onChange={set('name')} autoComplete="name" /></div>
               {mode === 'register' && <>
                 <div><label className="label" htmlFor="c">Company name</label><input id="c" className="input" value={f.companyName} onChange={set('companyName')} placeholder="e.g. Sharma Constructions" /></div>
-                <div><label className="label" htmlFor="setup-key">Administrator setup key</label><input id="setup-key" type="password" className="input" required autoComplete="off" value={f.adminSetupKey} onChange={set('adminSetupKey')} /></div>
+                <div><label className="label" htmlFor="setup-key">Administrator setup key</label><PasswordInput id="setup-key" label="setup key" required autoComplete="off" value={f.adminSetupKey} onChange={set('adminSetupKey')} /></div>
               </>}
-              {mode === 'employee' && <div><label className="label" htmlFor="join-code">Company join code</label><input id="join-code" type="password" className="input" required autoComplete="off" value={f.joinCode} onChange={set('joinCode')} /></div>}
+              {mode === 'employee' && <div><label className="label" htmlFor="join-code">Company join code</label><PasswordInput id="join-code" label="join code" required autoComplete="off" value={f.joinCode} onChange={set('joinCode')} /></div>}
             </>)}
             <div><label className="label" htmlFor="e">Email</label><input id="e" type="email" className="input" required value={f.email} onChange={set('email')} autoComplete="email" /></div>
-            <div><label className="label" htmlFor="p">Password</label><input id="p" type="password" className="input" required minLength={mode === 'login' ? undefined : 8} value={f.password} onChange={set('password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+            <div><label className="label" htmlFor="p">Password</label><PasswordInput id="p" required minLength={mode === 'login' ? undefined : 8} value={f.password} onChange={set('password')} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
               {mode !== 'login' && <p className="mt-1 text-xs text-slate-500">{mode === 'employee' ? 'At least 8 characters. If this email already has an account, use its current password.' : 'At least 8 characters.'}</p>}</div>
             {mode === 'login' && <p className="-mt-2 text-right text-sm"><Link to="/forgot-password" className="font-semibold text-blue-700 hover:underline">Forgot password?</Link></p>}
           </div>
